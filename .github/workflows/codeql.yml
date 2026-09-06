@@ -1,0 +1,38 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  schedule:
+    - cron: '27 3 * * 1'
+
+permissions:
+  security-events: write
+  packages: read
+  contents: read
+
+env:
+  QT_VERSION: '6.8.3'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.4.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: jurplel/install-qt-action@v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          install-deps: true
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+      - run: cmake --preset release
+      - run: cmake --build --preset release --parallel 2
+      - uses: github/codeql-action/analyze@v3

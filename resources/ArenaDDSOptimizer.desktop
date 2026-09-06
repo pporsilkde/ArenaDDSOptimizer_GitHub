@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Arena DDS Optimizer
+Comment=DDS texture analyzer and optimizer for ArenaMP/ArenaMW
+Exec=ArenaDDSOptimizer
+Icon=ArenaDDSOptimizer
+Terminal=false
+Categories=Graphics;Utility;

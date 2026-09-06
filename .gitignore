@@ -1,0 +1,11 @@
+build/
+cmake-build-*/
+*.user
+_ArenaDDS_Backup/
+dist/
+dist-debug/
+package/
+*.AppImage
+*.zip
+.vscode/
+.idea/

@@ -1,0 +1,9 @@
+Arena DDS Optimizer 0.1 built-in profiles
+
+safe       Windows + Android safe       max=4096  DXT1/DXT5  mips=all
+android    Android/ng-gl4es performance max=2048  DXT1/DXT5  mips=all
+windows    Windows quality              max=8192  DXT1/DXT5  mips=all
+windows_bc7 Windows BC7 advanced         max=8192  BC7         mips=all
+
+BC4/BC5/BC6H/BC7 inputs are skipped by compatibility profiles because automatic
+channel reinterpretation can break shader-specific masks/normal data.
