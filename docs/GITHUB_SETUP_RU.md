@@ -2,7 +2,7 @@
 
 ## 1. Создание репозитория
 
-Создайте пустой репозиторий, например `ArenaDDSOptimizer`, без автоматического README/License, затем из корня проекта:
+Создайте пустой репозиторий, например `ArenaDDSOptimizer`, затем из корня проекта:
 
 ```bash
 git init
@@ -13,30 +13,29 @@ git remote add origin https://github.com/ВАШ_АККАУНТ/ArenaDDSOptimizer
 git push -u origin main
 ```
 
-После push workflow `Build` автоматически соберёт:
+После push workflow **Build Windows** автоматически соберёт `ArenaDDSOptimizer-Windows-x64.zip`.
 
-- `ArenaDDSOptimizer-Windows-x64.zip` — portable Windows build с Qt DLL;
-- `ArenaDDSOptimizer-Linux-x86_64.AppImage` — переносимый Linux build.
+В ZIP уже будут `ArenaDDSOptimizer.exe`, Qt DLL и `texconv.exe`.
 
-Артефакты находятся в **Actions → Build → Artifacts**.
+## 2. DirectXTex / Texconv
 
-## 2. Создание релиза
+Workflow не хранит готовый `texconv.exe` в репозитории. Он клонирует официальный Microsoft DirectXTex с зафиксированного тега `may2026`, собирает target `texconv` и включает результат в portable ZIP.
+
+Это делает сборку воспроизводимой. В релиз также копируется `DirectXTex-LICENSE.txt` (MIT).
+
+## 3. Создание релиза
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
-Workflow `Release` соберёт обе платформы, создаст GitHub Release и приложит готовые бинарники.
-
-## 3. texconv
-
-`texconv` не включается в репозиторий и релиз. Пользователь выбирает установленный `texconv.exe` в интерфейсе. Это сохраняет чистое разделение лицензий и позволяет обновлять DirectXTex независимо.
+Workflow **Release Windows** соберёт portable ZIP и создаст GitHub Release автоматически.
 
 ## 4. Ветки
 
 Рекомендуется:
 
-- `main` — рабочая стабильная версия;
-- feature-ветки → Pull Request → CI Build + CodeQL;
-- release — только через тег `vX.Y.Z`.
+- `main` — стабильная версия;
+- feature-ветки → Pull Request → Windows Build + CodeQL;
+- релизы — тегами `vX.Y.Z`.

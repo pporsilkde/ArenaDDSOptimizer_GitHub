@@ -1,4 +1,29 @@
+# 0.1.3
+
+- Adds user-selectable additional DDS size reduction: Normal / Strong / Maximum.
+- Strong and Maximum modes lower only the maximum resolution cap for oversized textures while keeping BC1/BC3 GPU-native compression and full mipmaps.
+- Adds sortable texture table: click any column header to sort ascending/descending.
+- File size sorting uses real byte counts rather than formatted text, so 900 KB correctly sorts below 1.2 MB.
+- Resolution and mip columns use numeric sorting.
+- Sorting is safe during optimization; job-to-row tracking no longer relies on fixed table row numbers.
+
+# 0.1.2
+
+- Windows-only GitHub build and release pipeline.
+- Bundles Microsoft DirectXTex `texconv.exe` in the portable package.
+- `texconv` is built reproducibly from the official `may2026` tag.
+- The optimizer automatically prefers the bundled `texconv.exe` next to the application.
+- Adds DirectXTex MIT license and third-party notice to the release.
+- Removes Linux/AppImage CI and packaging.
+
 # Changelog
+
+## 0.1.1
+
+- Clarified recursive scanning as unlimited-depth traversal of all nested subdirectories.
+- Recursive scanning remains enabled by default.
+- Output keeps the complete relative directory tree.
+- Excludes `_ArenaDDS_Backup` and an output directory located inside the source tree from scanning.
 
 ## 0.1.0
 

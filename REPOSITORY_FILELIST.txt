@@ -11,11 +11,13 @@ LICENSE
 README.md
 README_RU.md
 REPOSITORY_FILELIST.txt
+REPOSITORY_INFO.md
+THIRD_PARTY_NOTICES.md
+VALIDATION_WINDOWS_TEXCONV.md
 docs/GITHUB_SETUP_RU.md
 presets/PROFILES.txt
-resources/ArenaDDSOptimizer.desktop
 resources/ArenaDDSOptimizer.svg
-scripts/package_linux.sh
+scripts/build_directxtex.ps1
 scripts/package_windows.ps1
 scripts/validate_repo.py
 src/ddsinfo.cpp

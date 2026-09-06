@@ -1,4 +1,4 @@
-name: CodeQL
+name: CodeQL Windows
 
 on:
   push:
@@ -17,22 +17,23 @@ env:
 
 jobs:
   analyze:
-    runs-on: ubuntu-24.04
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Enable MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
       - uses: jurplel/install-qt-action@v4.3.1
         with:
           version: ${{ env.QT_VERSION }}
-          host: linux
+          host: windows
           target: desktop
-          arch: linux_gcc_64
-          install-deps: true
+          arch: win64_msvc2022_64
+          cache: true
       - uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
-      - run: cmake --preset release
-      - run: cmake --build --preset release --parallel 2
+      - shell: pwsh
+        run: cmake --preset release
+      - shell: pwsh
+        run: cmake --build --preset release --parallel 2
       - uses: github/codeql-action/analyze@v3

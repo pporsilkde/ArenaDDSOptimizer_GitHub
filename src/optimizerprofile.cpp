@@ -45,7 +45,8 @@ QVector<OptimizerProfile> builtInProfiles()
     };
 }
 
-OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile, bool forceReencode)
+OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile,
+                           bool forceReencode, int compressionLevel)
 {
     OptimizationPlan plan;
     if (!info.valid)
@@ -57,10 +58,21 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
     plan.targetWidth = info.width;
     plan.targetHeight = info.height;
 
+    // BC1/BC3 have a fixed bytes-per-block ratio: there is no "stronger zlib-like"
+    // setting that makes the same DXT image smaller. Extra compression therefore
+    // uses a controlled resolution cap while retaining GPU-native BC formats and
+    // a complete mip chain. Level 0 = profile maximum, 1 = half, 2 = quarter.
+    compressionLevel = qBound(0, compressionLevel, 2);
+    int effectiveMaxDimension = profile.maxDimension;
+    if (compressionLevel == 1)
+        effectiveMaxDimension = qMax(1024, profile.maxDimension / 2);
+    else if (compressionLevel == 2)
+        effectiveMaxDimension = qMax(1024, profile.maxDimension / 4);
+
     const int largest = qMax(info.width, info.height);
-    if (largest > profile.maxDimension)
+    if (largest > effectiveMaxDimension)
     {
-        const double scale = double(profile.maxDimension) / double(largest);
+        const double scale = double(effectiveMaxDimension) / double(largest);
         plan.targetWidth = roundedBlockDimension(qRound(info.width * scale));
         plan.targetHeight = roundedBlockDimension(qRound(info.height * scale));
     }
@@ -101,7 +113,13 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
 
     QStringList why;
     if (resize)
+    {
         why << QStringLiteral("%1x%2 → %3x%4").arg(info.width).arg(info.height).arg(plan.targetWidth).arg(plan.targetHeight);
+        if (compressionLevel == 1)
+            why << QStringLiteral("сильная доп. компрессия");
+        else if (compressionLevel == 2)
+            why << QStringLiteral("максимальная доп. компрессия");
+    }
     if (needsMips)
         why << QStringLiteral("добавить mipmaps");
     if (formatChange || forceReencode)

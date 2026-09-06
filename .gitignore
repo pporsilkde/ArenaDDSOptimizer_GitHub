@@ -9,3 +9,4 @@ package/
 *.zip
 .vscode/
 .idea/
+third_party/

@@ -1,4 +1,4 @@
-name: Build
+name: Build Windows
 
 on:
   push:
@@ -11,10 +11,11 @@ permissions:
 
 env:
   QT_VERSION: '6.8.3'
+  DIRECTXTEX_TAG: 'may2026'
 
 jobs:
   windows:
-    name: Windows x64 portable
+    name: Windows x64 portable + bundled texconv
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4.4.0
@@ -31,15 +32,24 @@ jobs:
           target: desktop
           arch: win64_msvc2022_64
           cache: true
-      - name: Configure
+      - name: Build DirectXTex texconv
+        shell: pwsh
+        run: ./scripts/build_directxtex.ps1 -Tag "${{ env.DIRECTXTEX_TAG }}"
+      - name: Configure Arena DDS Optimizer
         shell: pwsh
         run: cmake --preset release
-      - name: Build
+      - name: Build Arena DDS Optimizer
         shell: pwsh
         run: cmake --build --preset release --parallel
       - name: Package portable build
         shell: pwsh
         run: ./scripts/package_windows.ps1
+      - name: Verify portable contents
+        shell: pwsh
+        run: |
+          if (-not (Test-Path package/windows/ArenaDDSOptimizer.exe)) { throw "ArenaDDSOptimizer.exe missing" }
+          if (-not (Test-Path package/windows/texconv.exe)) { throw "texconv.exe missing" }
+          & package/windows/texconv.exe --version
       - name: Create ZIP
         shell: pwsh
         run: Compress-Archive -Path package/windows/* -DestinationPath ArenaDDSOptimizer-Windows-x64.zip -Force
@@ -47,54 +57,4 @@ jobs:
         with:
           name: ArenaDDSOptimizer-Windows-x64
           path: ArenaDDSOptimizer-Windows-x64.zip
-          if-no-files-found: error
-
-  linux:
-    name: Linux x86_64 AppImage
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4.4.0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4.3.1
-        with:
-          version: ${{ env.QT_VERSION }}
-          host: linux
-          target: desktop
-          arch: linux_gcc_64
-          cache: true
-          install-deps: true
-      - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev file wget
-      - name: Configure
-        run: cmake --preset release
-      - name: Build
-        run: cmake --build --preset release --parallel
-      - name: Prepare AppDir
-        run: ./scripts/package_linux.sh
-      - name: Download linuxdeploy
-        run: |
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy*.AppImage
-      - name: Build AppImage
-        env:
-          LINUXDEPLOY_OUTPUT_VERSION: ${{ github.ref_name }}
-        run: |
-          export QMAKE="$(command -v qmake6 || command -v qmake)"
-          ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-            --appdir package/linux/ArenaDDSOptimizer.AppDir \
-            --desktop-file resources/ArenaDDSOptimizer.desktop \
-            --icon-file resources/ArenaDDSOptimizer.svg \
-            --plugin qt \
-            --output appimage
-          mv Arena_DDS_Optimizer-*.AppImage ArenaDDSOptimizer-Linux-x86_64.AppImage 2>/dev/null || \
-          mv ArenaDDSOptimizer-*.AppImage ArenaDDSOptimizer-Linux-x86_64.AppImage 2>/dev/null || \
-          mv ./*.AppImage ArenaDDSOptimizer-Linux-x86_64.AppImage
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ArenaDDSOptimizer-Linux-x86_64
-          path: ArenaDDSOptimizer-Linux-x86_64.AppImage
           if-no-files-found: error

@@ -28,4 +28,5 @@ struct OptimizationPlan
 };
 
 QVector<OptimizerProfile> builtInProfiles();
-OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile, bool forceReencode);
+OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile,
+                           bool forceReencode, int compressionLevel = 0);

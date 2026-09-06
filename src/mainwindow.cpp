@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
@@ -15,12 +16,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMetaType>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSettings>
 #include <QStatusBar>
 #include <QTableWidget>
+#include <QVariant>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QStandardPaths>
@@ -39,6 +42,58 @@ bool samePath(const QString& a, const QString& b)
     return aa == bb;
 #endif
 }
+
+bool isInsideTree(const QString& path, const QString& root)
+{
+    if (root.trimmed().isEmpty())
+        return false;
+
+    const QString cleanPath = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    QString cleanRoot = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+    if (!cleanRoot.endsWith(QDir::separator()))
+        cleanRoot += QDir::separator();
+
+#ifdef Q_OS_WIN
+    return cleanPath.startsWith(cleanRoot, Qt::CaseInsensitive);
+#else
+    return cleanPath.startsWith(cleanRoot);
+#endif
+}
+
+constexpr int SortRole = Qt::UserRole + 1;
+constexpr int JobIndexRole = Qt::UserRole + 2;
+
+class SortableTableWidgetItem final : public QTableWidgetItem
+{
+public:
+    explicit SortableTableWidgetItem(const QString& text = {}, const QVariant& sortKey = {})
+        : QTableWidgetItem(text)
+    {
+        if (sortKey.isValid())
+            setData(SortRole, sortKey);
+    }
+
+    bool operator<(const QTableWidgetItem& other) const override
+    {
+        const QVariant a = data(SortRole);
+        const QVariant b = other.data(SortRole);
+        if (a.isValid() && b.isValid())
+        {
+            const int aType = a.userType();
+            const int bType = b.userType();
+            const bool aNumber = aType == QMetaType::Int || aType == QMetaType::UInt ||
+                                 aType == QMetaType::LongLong || aType == QMetaType::ULongLong ||
+                                 aType == QMetaType::Double;
+            const bool bNumber = bType == QMetaType::Int || bType == QMetaType::UInt ||
+                                 bType == QMetaType::LongLong || bType == QMetaType::ULongLong ||
+                                 bType == QMetaType::Double;
+            if (aNumber && bNumber)
+                return a.toDouble() < b.toDouble();
+            return QString::localeAwareCompare(a.toString(), b.toString()) < 0;
+        }
+        return QTableWidgetItem::operator<(other);
+    }
+};
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -83,7 +138,9 @@ void MainWindow::buildUi()
 
     form->addRow(QStringLiteral("Папка с DDS:"), makePathRow(m_sourceEdit, QStringLiteral("Обзор…"), [this]{ browseSource(); }));
     form->addRow(QStringLiteral("Выходная папка:"), makePathRow(m_outputEdit, QStringLiteral("Обзор…"), [this]{ browseOutput(); }));
-    form->addRow(QStringLiteral("texconv.exe:"), makePathRow(m_toolEdit, QStringLiteral("Обзор…"), [this]{ browseTool(); }));
+    form->addRow(QStringLiteral("texconv.exe (встроенный):"), makePathRow(m_toolEdit, QStringLiteral("Обзор…"), [this]{ browseTool(); }));
+    m_toolEdit->setPlaceholderText(QStringLiteral("В portable-сборке находится рядом с ArenaDDSOptimizer.exe"));
+    m_toolEdit->setToolTip(QStringLiteral("Windows release включает DirectXTex texconv.exe. Ручной путь нужен только для собственной/отладочной сборки."));
     main->addWidget(paths);
 
     auto* options = new QGroupBox(QStringLiteral("Профиль оптимизации"), root);
@@ -91,13 +148,23 @@ void MainWindow::buildUi()
     m_profileCombo = new QComboBox(options);
     for (const auto& p : m_profiles)
         m_profileCombo->addItem(p.displayName, p.id);
-    m_recursiveCheck = new QCheckBox(QStringLiteral("Подпапки"), options);
+    m_compressionCombo = new QComboBox(options);
+    m_compressionCombo->addItem(QStringLiteral("Доп. компрессия: обычная"), 0);
+    m_compressionCombo->addItem(QStringLiteral("Доп. компрессия: сильная"), 1);
+    m_compressionCombo->addItem(QStringLiteral("Доп. компрессия: максимальная"), 2);
+    m_compressionCombo->setToolTip(QStringLiteral(
+        "BC1/BC3 имеют фиксированный размер блока. Дополнительное уменьшение размера достигается "
+        "контролируемым снижением разрешения крупных текстур: сильная = 1/2 лимита профиля, "
+        "максимальная = 1/4 (не ниже 1024). Полные mipmaps сохраняются."));
+    m_recursiveCheck = new QCheckBox(QStringLiteral("Все подпапки (рекурсивно)"), options);
+    m_recursiveCheck->setToolTip(QStringLiteral("Сканировать выбранную папку и все вложенные подпапки на любой глубине."));
     m_recursiveCheck->setChecked(true);
     m_backupCheck = new QCheckBox(QStringLiteral("Резервная копия при замене"), options);
     m_backupCheck->setChecked(true);
     m_forceCheck = new QCheckBox(QStringLiteral("Перекодировать даже оптимальные"), options);
     m_dryRunCheck = new QCheckBox(QStringLiteral("Только анализ"), options);
     optionsLayout->addWidget(m_profileCombo, 1);
+    optionsLayout->addWidget(m_compressionCombo);
     optionsLayout->addWidget(m_recursiveCheck);
     optionsLayout->addWidget(m_backupCheck);
     optionsLayout->addWidget(m_forceCheck);
@@ -126,6 +193,10 @@ void MainWindow::buildUi()
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->horizontalHeader()->setStretchLastSection(true);
+    m_table->horizontalHeader()->setSectionsClickable(true);
+    m_table->horizontalHeader()->setSortIndicatorShown(true);
+    m_table->horizontalHeader()->setToolTip(QStringLiteral("Нажмите заголовок столбца для сортировки; повторный клик меняет направление."));
+    m_table->setSortingEnabled(true);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     for (int c = 1; c <= 6; ++c)
         m_table->horizontalHeader()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
@@ -143,6 +214,7 @@ void MainWindow::buildUi()
     connect(m_optimizeButton, &QPushButton::clicked, this, &MainWindow::optimizeTextures);
     connect(m_cancelButton, &QPushButton::clicked, this, &MainWindow::cancelOptimization);
     connect(m_profileCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::profileChanged);
+    connect(m_compressionCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]{ refreshPlans(); });
     connect(m_forceCheck, &QCheckBox::toggled, this, [this]{ refreshPlans(); });
 }
 
@@ -152,10 +224,25 @@ void MainWindow::loadSettings()
     restoreGeometry(s.value(QStringLiteral("geometry")).toByteArray());
     m_sourceEdit->setText(s.value(QStringLiteral("source")).toString());
     m_outputEdit->setText(s.value(QStringLiteral("output")).toString());
-    m_toolEdit->setText(s.value(QStringLiteral("texconv")).toString());
+    const QString savedTexconv = s.value(QStringLiteral("texconv")).toString();
+    const QString bundledTexconv = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("texconv.exe"));
+#ifdef Q_OS_WIN
+    // Portable Windows releases ship texconv.exe next to ArenaDDSOptimizer.exe.
+    // Prefer the bundled, version-pinned tool so the user does not need winget or PATH setup.
+    if (QFileInfo::exists(bundledTexconv))
+        m_toolEdit->setText(bundledTexconv);
+    else
+        m_toolEdit->setText(savedTexconv);
+#else
+    m_toolEdit->setText(savedTexconv);
+#endif
     m_recursiveCheck->setChecked(s.value(QStringLiteral("recursive"), true).toBool());
     m_backupCheck->setChecked(s.value(QStringLiteral("backup"), true).toBool());
     m_forceCheck->setChecked(s.value(QStringLiteral("force"), false).toBool());
+    const int savedCompression = s.value(QStringLiteral("compressionLevel"), 0).toInt();
+    const int compressionIndex = m_compressionCombo->findData(savedCompression);
+    if (compressionIndex >= 0)
+        m_compressionCombo->setCurrentIndex(compressionIndex);
     const QString profile = s.value(QStringLiteral("profile"), QStringLiteral("safe")).toString();
     const int idx = m_profileCombo->findData(profile);
     if (idx >= 0)
@@ -181,6 +268,7 @@ void MainWindow::saveSettings()
     s.setValue(QStringLiteral("recursive"), m_recursiveCheck->isChecked());
     s.setValue(QStringLiteral("backup"), m_backupCheck->isChecked());
     s.setValue(QStringLiteral("force"), m_forceCheck->isChecked());
+    s.setValue(QStringLiteral("compressionLevel"), compressionLevel());
     s.setValue(QStringLiteral("profile"), m_profileCombo->currentData());
 }
 
@@ -223,6 +311,22 @@ OptimizerProfile MainWindow::currentProfile() const
     return m_profiles.first();
 }
 
+int MainWindow::compressionLevel() const
+{
+    return m_compressionCombo ? m_compressionCombo->currentData().toInt() : 0;
+}
+
+int MainWindow::rowForJob(int jobIndex) const
+{
+    for (int row = 0; row < m_table->rowCount(); ++row)
+    {
+        const QTableWidgetItem* item = m_table->item(row, 0);
+        if (item && item->data(JobIndexRole).toInt() == jobIndex)
+            return row;
+    }
+    return -1;
+}
+
 void MainWindow::scanTextures()
 {
     const QString root = QDir::cleanPath(m_sourceEdit->text().trimmed());
@@ -237,39 +341,60 @@ void MainWindow::scanTextures()
     m_jobs.clear();
     m_table->setRowCount(0);
 
-    QDirIterator::IteratorFlags flags = m_recursiveCheck->isChecked() ? QDirIterator::Subdirectories : QDirIterator::NoIteratorFlags;
+    const QDirIterator::IteratorFlags flags = m_recursiveCheck->isChecked()
+        ? QDirIterator::Subdirectories
+        : QDirIterator::NoIteratorFlags;
     QDirIterator it(root, QStringList() << QStringLiteral("*.dds") << QStringLiteral("*.DDS"), QDir::Files, flags);
     QDir base(root);
+
+    QString outputRoot = QDir::cleanPath(m_outputEdit->text().trimmed());
+    if (outputRoot.isEmpty() || samePath(outputRoot, root) || !isInsideTree(outputRoot, root))
+        outputRoot.clear();
+
     while (it.hasNext())
     {
         const QString path = it.next();
         const QString rel = QDir::fromNativeSeparators(base.relativeFilePath(path));
+
+        // Never scan our own backup tree or a dedicated output tree located inside the source tree.
         if (rel.startsWith(QStringLiteral("_ArenaDDS_Backup/"), Qt::CaseInsensitive))
+            continue;
+        if (!outputRoot.isEmpty() && isInsideTree(path, outputRoot))
             continue;
 
         TextureJob job;
         job.inputPath = path;
         job.relativePath = rel;
         job.info = readDdsInfo(path);
-        job.plan = buildPlan(path, job.info, currentProfile(), m_forceCheck->isChecked());
-        job.row = m_jobs.size();
+        job.plan = buildPlan(path, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel());
         m_jobs.push_back(job);
     }
 
+    const bool sortingWasEnabled = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
     m_table->setRowCount(m_jobs.size());
-    for (const auto& job : m_jobs)
+    for (int jobIndex = 0; jobIndex < m_jobs.size(); ++jobIndex)
     {
-        const int r = job.row;
-        auto set = [this, r](int c, const QString& text) { m_table->setItem(r, c, new QTableWidgetItem(text)); };
-        set(0, native(job.relativePath));
-        set(1, job.info.valid ? QStringLiteral("%1×%2").arg(job.info.width).arg(job.info.height) : QStringLiteral("—"));
-        set(2, job.info.format);
-        set(3, job.info.valid ? QString::number(job.info.mipCount) : QStringLiteral("—"));
-        set(4, humanSize(job.info.fileSize));
-        set(5, job.plan.process ? QStringLiteral("%1×%2 %3").arg(job.plan.targetWidth).arg(job.plan.targetHeight).arg(job.plan.outputFormat) : QStringLiteral("—"));
-        set(6, job.plan.reason);
-        set(7, job.plan.risky ? QStringLiteral("Проверить вручную") : (job.plan.process ? QStringLiteral("Готов к обработке") : QStringLiteral("Пропуск")));
+        const auto& job = m_jobs[jobIndex];
+        const int r = jobIndex;
+        auto set = [this, r, jobIndex](int c, const QString& text, const QVariant& sortKey = QVariant()) {
+            auto* item = new SortableTableWidgetItem(text, sortKey);
+            item->setData(JobIndexRole, jobIndex);
+            m_table->setItem(r, c, item);
+        };
+        set(0, native(job.relativePath), job.relativePath.toLower());
+        const qulonglong area = job.info.valid ? qulonglong(job.info.width) * qulonglong(job.info.height) : 0;
+        set(1, job.info.valid ? QStringLiteral("%1×%2").arg(job.info.width).arg(job.info.height) : QStringLiteral("—"), area);
+        set(2, job.info.format, job.info.format.toLower());
+        set(3, job.info.valid ? QString::number(job.info.mipCount) : QStringLiteral("—"), job.info.valid ? job.info.mipCount : -1);
+        set(4, humanSize(job.info.fileSize), qulonglong(job.info.fileSize));
+        const qulonglong targetArea = job.plan.process ? qulonglong(job.plan.targetWidth) * qulonglong(job.plan.targetHeight) : 0;
+        set(5, job.plan.process ? QStringLiteral("%1×%2 %3").arg(job.plan.targetWidth).arg(job.plan.targetHeight).arg(job.plan.outputFormat) : QStringLiteral("—"), targetArea);
+        set(6, job.plan.reason, job.plan.reason.toLower());
+        const QString status = job.plan.risky ? QStringLiteral("Проверить вручную") : (job.plan.process ? QStringLiteral("Готов к обработке") : QStringLiteral("Пропуск"));
+        set(7, status, status.toLower());
     }
+    m_table->setSortingEnabled(sortingWasEnabled);
 
     QApplication::restoreOverrideCursor();
     updateSummary();
@@ -280,14 +405,25 @@ void MainWindow::refreshPlans()
 {
     if (m_jobs.isEmpty())
         return;
-    for (auto& job : m_jobs)
+    const bool sortingWasEnabled = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
+    for (int jobIndex = 0; jobIndex < m_jobs.size(); ++jobIndex)
     {
-        job.plan = buildPlan(job.inputPath, job.info, currentProfile(), m_forceCheck->isChecked());
-        const int r = job.row;
-        m_table->item(r, 5)->setText(job.plan.process ? QStringLiteral("%1×%2 %3").arg(job.plan.targetWidth).arg(job.plan.targetHeight).arg(job.plan.outputFormat) : QStringLiteral("—"));
+        auto& job = m_jobs[jobIndex];
+        job.plan = buildPlan(job.inputPath, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel());
+        const int r = rowForJob(jobIndex);
+        if (r < 0)
+            continue;
+        const QString target = job.plan.process ? QStringLiteral("%1×%2 %3").arg(job.plan.targetWidth).arg(job.plan.targetHeight).arg(job.plan.outputFormat) : QStringLiteral("—");
+        m_table->item(r, 5)->setText(target);
+        m_table->item(r, 5)->setData(SortRole, job.plan.process ? QVariant::fromValue(qulonglong(job.plan.targetWidth) * qulonglong(job.plan.targetHeight)) : QVariant::fromValue(qulonglong(0)));
         m_table->item(r, 6)->setText(job.plan.reason);
-        m_table->item(r, 7)->setText(job.plan.risky ? QStringLiteral("Проверить вручную") : (job.plan.process ? QStringLiteral("Готов к обработке") : QStringLiteral("Пропуск")));
+        m_table->item(r, 6)->setData(SortRole, job.plan.reason.toLower());
+        const QString status = job.plan.risky ? QStringLiteral("Проверить вручную") : (job.plan.process ? QStringLiteral("Готов к обработке") : QStringLiteral("Пропуск"));
+        m_table->item(r, 7)->setText(status);
+        m_table->item(r, 7)->setData(SortRole, status.toLower());
     }
+    m_table->setSortingEnabled(sortingWasEnabled);
     updateSummary();
 }
 
@@ -301,7 +437,7 @@ bool MainWindow::validateTexconv(QString& error) const
     const QString tool = m_toolEdit->text().trimmed();
     if (tool.isEmpty())
     {
-        error = QStringLiteral("Укажите путь к texconv.exe (DirectXTex).");
+        error = QStringLiteral("texconv.exe не найден. В официальной portable-сборке он должен находиться рядом с ArenaDDSOptimizer.exe. Для собственной сборки укажите путь вручную.");
         return false;
     }
     if (!QFileInfo(tool).isExecutable() && !QFileInfo(tool).isFile())
@@ -323,6 +459,18 @@ void MainWindow::optimizeTextures()
     {
         QMessageBox::information(this, QStringLiteral("Arena DDS Optimizer"), QStringLiteral("Включён режим «Только анализ». Файлы не изменены."));
         return;
+    }
+
+    if (compressionLevel() > 0)
+    {
+        const QString mode = compressionLevel() == 1 ? QStringLiteral("сильная") : QStringLiteral("максимальная");
+        const auto answer = QMessageBox::warning(this, QStringLiteral("Arena DDS Optimizer"),
+            QStringLiteral("Выбрана %1 дополнительная компрессия.\n\n"
+                           "Для уменьшения размера слишком крупные текстуры могут быть уменьшены по разрешению. "
+                           "BC1/DXT1 и BC3/DXT5, а также полный mip-chain сохраняются.\n\nПродолжить?").arg(mode),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
     }
 
     QString error;
@@ -395,8 +543,15 @@ void MainWindow::startNextJob()
 
     m_currentJobIndex = m_queue[m_queuePos];
     const TextureJob& job = m_jobs[m_currentJobIndex];
-    m_table->item(job.row, 7)->setText(QStringLiteral("Обработка…"));
-    m_table->scrollToItem(m_table->item(job.row, 0));
+    const int row = rowForJob(m_currentJobIndex);
+    QTableWidgetItem* fileItem = row >= 0 ? m_table->item(row, 0) : nullptr;
+    if (row >= 0)
+    {
+        m_table->item(row, 7)->setText(QStringLiteral("Обработка…"));
+        m_table->item(row, 7)->setData(SortRole, QStringLiteral("обработка"));
+    }
+    if (fileItem)
+        m_table->scrollToItem(fileItem);
 
     const QString tempBase = QDir(QDir::tempPath()).filePath(QStringLiteral("ArenaDDSOptimizer_%1_%2")
         .arg(QCoreApplication::applicationPid()).arg(m_currentJobIndex));
@@ -410,6 +565,15 @@ void MainWindow::startNextJob()
          << QStringLiteral("-f") << job.plan.outputFormat
          << QStringLiteral("-m") << (profile.generateMipmaps ? QStringLiteral("0") : QStringLiteral("1"))
          << QStringLiteral("-if") << QStringLiteral("FANT");
+
+    // DirectXTex BC1-BC3 compression is fixed-rate. Dithering can improve visual
+    // quality at the same size after aggressive downscaling. BC7's `x` flag
+    // enables its maximum compression search mode (quality/encode effort, not bytes).
+    if (compressionLevel() > 0 &&
+        (job.plan.outputFormat == QLatin1String("DXT1") || job.plan.outputFormat == QLatin1String("DXT5")))
+        args << QStringLiteral("-bc") << QStringLiteral("d");
+    else if (compressionLevel() == 2 && job.plan.outputFormat == QLatin1String("BC7_UNORM"))
+        args << QStringLiteral("-bc") << QStringLiteral("x");
 
     if (job.plan.targetWidth != job.info.width)
         args << QStringLiteral("-w") << QString::number(job.plan.targetWidth);
@@ -429,10 +593,13 @@ void MainWindow::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
     if (m_currentJobIndex < 0 || m_currentJobIndex >= m_jobs.size())
         return;
     TextureJob& job = m_jobs[m_currentJobIndex];
+    const bool sortingWasEnabled = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
+    const int row = rowForJob(m_currentJobIndex);
 
     if (m_cancelRequested)
     {
-        m_table->item(job.row, 7)->setText(QStringLiteral("Отменено"));
+        if (row >= 0) { m_table->item(row, 7)->setText(QStringLiteral("Отменено")); m_table->item(row, 7)->setData(SortRole, QStringLiteral("отменено")); }
     }
     else if (exitStatus != QProcess::NormalExit || exitCode != 0)
     {
@@ -440,8 +607,8 @@ void MainWindow::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
         const QString out = QString::fromLocal8Bit(m_process->readAllStandardOutput()).trimmed();
         if (!out.isEmpty())
             err += (err.isEmpty() ? QString() : QStringLiteral("\n")) + out;
-        m_table->item(job.row, 7)->setText(QStringLiteral("Ошибка texconv"));
-        m_table->item(job.row, 7)->setToolTip(err);
+        if (row >= 0) { m_table->item(row, 7)->setText(QStringLiteral("Ошибка texconv")); m_table->item(row, 7)->setData(SortRole, QStringLiteral("ошибка texconv")); }
+        if (row >= 0) m_table->item(row, 7)->setToolTip(err);
         ++m_failCount;
     }
     else
@@ -450,27 +617,32 @@ void MainWindow::processFinished(int exitCode, QProcess::ExitStatus exitStatus)
         QString error;
         if (generated.isEmpty() || !commitOutput(job, generated, error))
         {
-            m_table->item(job.row, 7)->setText(QStringLiteral("Ошибка записи"));
-            m_table->item(job.row, 7)->setToolTip(error.isEmpty() ? QStringLiteral("texconv не создал ожидаемый DDS") : error);
+            if (row >= 0) { m_table->item(row, 7)->setText(QStringLiteral("Ошибка записи")); m_table->item(row, 7)->setData(SortRole, QStringLiteral("ошибка записи")); }
+            if (row >= 0) m_table->item(row, 7)->setToolTip(error.isEmpty() ? QStringLiteral("texconv не создал ожидаемый DDS") : error);
             ++m_failCount;
         }
         else
         {
             const DdsInfo after = readDdsInfo(outputPathFor(job));
-            m_table->item(job.row, 7)->setText(QStringLiteral("Готово"));
-            if (after.valid)
+            if (row >= 0) { m_table->item(row, 7)->setText(QStringLiteral("Готово")); m_table->item(row, 7)->setData(SortRole, QStringLiteral("готово")); }
+            if (after.valid && row >= 0)
             {
-                m_table->item(job.row, 1)->setText(QStringLiteral("%1×%2").arg(after.width).arg(after.height));
-                m_table->item(job.row, 2)->setText(after.format);
-                m_table->item(job.row, 3)->setText(QString::number(after.mipCount));
-                m_table->item(job.row, 4)->setText(humanSize(after.fileSize));
-                m_table->item(job.row, 7)->setToolTip(QStringLiteral("%1×%2, %3, mip %4, %5")
+                m_table->item(row, 1)->setText(QStringLiteral("%1×%2").arg(after.width).arg(after.height));
+                m_table->item(row, 1)->setData(SortRole, QVariant::fromValue(qulonglong(after.width) * qulonglong(after.height)));
+                m_table->item(row, 2)->setText(after.format);
+                m_table->item(row, 2)->setData(SortRole, after.format.toLower());
+                m_table->item(row, 3)->setText(QString::number(after.mipCount));
+                m_table->item(row, 3)->setData(SortRole, after.mipCount);
+                m_table->item(row, 4)->setText(humanSize(after.fileSize));
+                m_table->item(row, 4)->setData(SortRole, QVariant::fromValue(qulonglong(after.fileSize)));
+                m_table->item(row, 7)->setToolTip(QStringLiteral("%1×%2, %3, mip %4, %5")
                     .arg(after.width).arg(after.height).arg(after.format).arg(after.mipCount).arg(humanSize(after.fileSize)));
             }
             ++m_successCount;
         }
     }
 
+    m_table->setSortingEnabled(sortingWasEnabled);
     QDir(m_currentTempDir).removeRecursively();
     ++m_queuePos;
     m_progress->setValue(m_queuePos);
@@ -484,18 +656,27 @@ void MainWindow::processError(QProcess::ProcessError errorCode)
         return;
 
     TextureJob& job = m_jobs[m_currentJobIndex];
-    m_table->item(job.row, 7)->setToolTip(m_process->errorString());
+    Q_UNUSED(job);
+    const bool sortingWasEnabled = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
+    const int row = rowForJob(m_currentJobIndex);
+    if (row >= 0)
+        m_table->item(row, 7)->setToolTip(m_process->errorString());
 
     if (errorCode == QProcess::FailedToStart)
     {
-        m_table->item(job.row, 7)->setText(QStringLiteral("texconv не запущен"));
+        if (row >= 0)
+            { m_table->item(row, 7)->setText(QStringLiteral("texconv не запущен")); m_table->item(row, 7)->setData(SortRole, QStringLiteral("texconv не запущен")); }
         ++m_failCount;
         QDir(m_currentTempDir).removeRecursively();
         ++m_queuePos;
         m_progress->setValue(m_queuePos);
         m_currentJobIndex = -1;
+        m_table->setSortingEnabled(sortingWasEnabled);
         startNextJob();
+        return;
     }
+    m_table->setSortingEnabled(sortingWasEnabled);
 }
 
 QString MainWindow::findGeneratedFile(const QString& tempDir, const QString& sourcePath) const
@@ -584,6 +765,7 @@ void MainWindow::setBusy(bool busy)
     m_outputEdit->setEnabled(!busy);
     m_toolEdit->setEnabled(!busy);
     m_profileCombo->setEnabled(!busy);
+    m_compressionCombo->setEnabled(!busy);
 }
 
 QString MainWindow::humanSize(quint64 bytes) const

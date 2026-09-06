@@ -7,3 +7,13 @@ windows_bc7 Windows BC7 advanced         max=8192  BC7         mips=all
 
 BC4/BC5/BC6H/BC7 inputs are skipped by compatibility profiles because automatic
 channel reinterpretation can break shader-specific masks/normal data.
+
+
+ADDITIONAL COMPRESSION
+----------------------
+Normal  : profile max dimension (current quality target).
+Strong  : half of profile max dimension, never below 1024.
+Maximum : quarter of profile max dimension, never below 1024.
+
+BC1/DXT1 and BC3/DXT5 have fixed block sizes, so this setting intentionally reduces
+only oversized texture resolution. Full mipmaps remain enabled for runtime efficiency.

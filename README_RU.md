@@ -1,32 +1,40 @@
 # Arena DDS Optimizer (Qt)
 
-Пакетный анализатор и оптимизатор DDS для ArenaMW / ArenaMP с упором на общий набор текстур для Windows и Android/ng-gl4es.
+Пакетный анализатор и оптимизатор DDS для ArenaMW / ArenaMP. Само приложение собирается только под **Windows x64**, а профили оптимизации умеют готовить текстуры как для Windows, так и для Android/ng-gl4es.
 
 
-## GitHub Actions / готовые сборки
+## GitHub Actions / готовая Windows-сборка
 
-Репозиторий содержит CI для Windows x64 и Linux x86_64. Каждый push в `main` собирает portable Windows ZIP и Linux AppImage. Тег вида `v0.1.0` автоматически создаёт GitHub Release с обоими файлами. Подробно: [`docs/GITHUB_SETUP_RU.md`](docs/GITHUB_SETUP_RU.md).
+Репозиторий содержит CI только для **Windows x64**. Каждый push в `main` собирает portable ZIP. Тег вида `v0.1.3` автоматически создаёт GitHub Release с Windows ZIP.
+
+Portable-пакет уже содержит:
+
+- `ArenaDDSOptimizer.exe`;
+- все необходимые Qt DLL;
+- **`texconv.exe` из Microsoft DirectXTex**;
+- `DirectXTex-LICENSE.txt`.
+
+Пользователю не нужно отдельно устанавливать `texconv` через `winget` и не нужно указывать его путь вручную. GitHub Actions собирает `texconv.exe` из официального DirectXTex тега `may2026`.
+
+Подробно: [`docs/GITHUB_SETUP_RU.md`](docs/GITHUB_SETUP_RU.md).
 
 ## Что делает
 
-- рекурсивно сканирует `.dds`;
+- рекурсивно сканирует `.dds` во всех подпапках и подпапках внутри них, без ограничения глубины;
 - читает DDS/DX10 заголовок без полной декомпрессии изображения;
 - показывает размер, формат, mipmaps и размер файла;
 - строит план до изменения файлов;
 - вызывает `texconv` из Microsoft DirectXTex для реального ресайза, mipmap generation и BC-compression;
-- сохраняет структуру подпапок;
+- сохраняет полную относительную структуру подпапок в выходной папке и backup;
+- автоматически исключает `_ArenaDDS_Backup` и отдельную выходную папку, если она расположена внутри исходной;
 - при оптимизации «на месте» создаёт резервную копию в `_ArenaDDS_Backup/<дата-время>`;
 - заменяет исходный файл через `QSaveFile`, а не пишет поверх него напрямую;
 - хранит настройки интерфейса через `QSettings`;
 - умеет режим «Только анализ».
 
-`texconv.exe` в проект **не включён**. Укажите путь к своей установленной копии DirectXTex Texconv.
+В готовой Windows portable-сборке **`texconv.exe` уже находится рядом с `ArenaDDSOptimizer.exe`**. Программа автоматически выбирает эту встроенную копию. Поле выбора пути оставлено только как резервный вариант для разработчика или ручной замены версии DirectXTex.
 
-На Windows его можно установить отдельно:
-
-```powershell
-winget install Microsoft.DirectXTex.Texconv
-```
+В исходный Git-репозиторий готовый чужой бинарник не коммитится: workflow собирает `texconv` из официального Microsoft DirectXTex (`may2026`) и добавляет его в релиз вместе с MIT-лицензией.
 
 ## Профили
 
@@ -78,22 +86,24 @@ DDS-header сообщает формат, но не всегда позволя�
 
 Это снижает риск разрушить прозрачность при массовой обработке.
 
-## Сборка
+## Сборка Windows
 
-Требования:
+Требования для локальной сборки:
 
-- CMake 3.16+;
-- компилятор C++17;
-- Qt 5.15+ **или** Qt 6.x с модулем Widgets.
+- Windows 10/11 x64;
+- Visual Studio 2022 Build Tools / MSVC;
+- CMake 3.21+ и Ninja;
+- Git;
+- PowerShell 7 (`pwsh`);
+- Qt 6.x Widgets (CI использует Qt 6.8.3).
 
-Пример:
+Самый простой вариант:
 
 ```bat
-cmake -S . -B build -DCMAKE_PREFIX_PATH=C:\Qt\6.8.0\msvc2022_64
-cmake --build build --config Release
+BUILD_WINDOWS.bat
 ```
 
-Или просто откройте `CMakeLists.txt` в Qt Creator.
+Скрипт сначала клонирует и собирает официальный DirectXTex `may2026` (`texconv.exe`), затем собирает Arena DDS Optimizer и создаёт `package\windows`.
 
 ## Рекомендуемый workflow для ArenaMP/ArenaMW
 
@@ -113,7 +123,12 @@ cmake --build build --config Release
 - не меняет UV или материалы;
 - не трогает NIF;
 - не удаляет текстуры автоматически;
-- не включает чужие бинарники `texconv`;
+- не требует отдельно установленного `texconv`: Windows release включает `texconv.exe`, собранный CI из официального DirectXTex;
 - не пытается оптимизировать уже сжатый DDS через JPEG/PNG-подобное сжатие.
 
 Следующий логичный этап — чтение NIF/material references для точного определения diffuse/normal/mask и автоматического выбора формата по реальному использованию текстуры.
+
+
+### О дополнительной компрессии
+
+BC1/BC3 — форматы с фиксированным размером блока, поэтому нельзя получить меньший DDS простым повышением «уровня сжатия». Режимы **Сильная** и **Максимальная** уменьшают только слишком крупные текстуры до более низкого лимита разрешения, сохраняют полный mip-chain и используют DirectXTex dithering для BC1/BC3. Перед запуском приложение показывает предупреждение.

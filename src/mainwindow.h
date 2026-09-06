@@ -40,7 +40,6 @@ private:
         QString relativePath;
         DdsInfo info;
         OptimizationPlan plan;
-        int row = -1;
     };
 
     void buildUi();
@@ -53,6 +52,8 @@ private:
     QString outputPathFor(const TextureJob& job) const;
     QString humanSize(quint64 bytes) const;
     OptimizerProfile currentProfile() const;
+    int compressionLevel() const;
+    int rowForJob(int jobIndex) const;
     void setBusy(bool busy);
     void updateSummary();
     bool validateTexconv(QString& error) const;
@@ -61,6 +62,7 @@ private:
     QLineEdit* m_outputEdit = nullptr;
     QLineEdit* m_toolEdit = nullptr;
     QComboBox* m_profileCombo = nullptr;
+    QComboBox* m_compressionCombo = nullptr;
     QCheckBox* m_recursiveCheck = nullptr;
     QCheckBox* m_backupCheck = nullptr;
     QCheckBox* m_forceCheck = nullptr;
