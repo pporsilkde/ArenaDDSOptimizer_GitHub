@@ -1,5 +1,6 @@
 #include "optimizerprofile.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QtMath>
 
@@ -46,7 +47,8 @@ QVector<OptimizerProfile> builtInProfiles()
 }
 
 OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile,
-                           bool forceReencode, int compressionLevel)
+                           bool forceReencode, int compressionLevel, int shortSideTarget,
+                           bool excludeSmallTextures, const QStringList& excludedNamePatterns)
 {
     OptimizationPlan plan;
     if (!info.valid)
@@ -57,6 +59,24 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
 
     plan.targetWidth = info.width;
     plan.targetHeight = info.height;
+
+    const QString lowerPath = QDir::fromNativeSeparators(path).toLower();
+    for (const QString& rawPattern : excludedNamePatterns)
+    {
+        const QString pattern = rawPattern.trimmed().toLower();
+        if (!pattern.isEmpty() && lowerPath.contains(pattern))
+        {
+            plan.reason = QStringLiteral("Пропуск: исключено по имени (%1)").arg(pattern);
+            return plan;
+        }
+    }
+
+    const int originalShortSide = qMin(info.width, info.height);
+    if (excludeSmallTextures && originalShortSide <= 256)
+    {
+        plan.reason = QStringLiteral("Пропуск: маленькая текстура (меньшая сторона ≤ 256)");
+        return plan;
+    }
 
     // BC1/BC3 have a fixed bytes-per-block ratio: there is no "stronger zlib-like"
     // setting that makes the same DXT image smaller. Extra compression therefore
@@ -75,6 +95,20 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
         const double scale = double(effectiveMaxDimension) / double(largest);
         plan.targetWidth = roundedBlockDimension(qRound(info.width * scale));
         plan.targetHeight = roundedBlockDimension(qRound(info.height * scale));
+    }
+
+    // Optional user-selected resize by the *shorter* side. Never upscale.
+    // The profile maximum still acts as a hard ceiling for the longer side.
+    if (shortSideTarget > 0)
+    {
+        shortSideTarget = qBound(256, shortSideTarget, 2048);
+        const int currentShort = qMin(plan.targetWidth, plan.targetHeight);
+        if (currentShort > shortSideTarget)
+        {
+            const double scale = double(shortSideTarget) / double(currentShort);
+            plan.targetWidth = roundedBlockDimension(qRound(plan.targetWidth * scale));
+            plan.targetHeight = roundedBlockDimension(qRound(plan.targetHeight * scale));
+        }
     }
 
     const bool normal = looksLikeNormalMap(path);
@@ -115,6 +149,9 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
     if (resize)
     {
         why << QStringLiteral("%1x%2 → %3x%4").arg(info.width).arg(info.height).arg(plan.targetWidth).arg(plan.targetHeight);
+        if (shortSideTarget > 0 && qMin(plan.targetWidth, plan.targetHeight) <= shortSideTarget &&
+            qMin(info.width, info.height) > shortSideTarget)
+            why << QStringLiteral("меньшая сторона → %1").arg(shortSideTarget);
         if (compressionLevel == 1)
             why << QStringLiteral("сильная доп. компрессия");
         else if (compressionLevel == 2)

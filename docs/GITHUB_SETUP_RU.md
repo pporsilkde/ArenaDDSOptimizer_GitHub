@@ -26,8 +26,8 @@ Workflow не хранит готовый `texconv.exe` в репозитори�
 ## 3. Создание релиза
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 Workflow **Release Windows** соберёт portable ZIP и создаст GitHub Release автоматически.

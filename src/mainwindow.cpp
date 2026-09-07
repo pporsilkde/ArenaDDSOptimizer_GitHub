@@ -144,7 +144,8 @@ void MainWindow::buildUi()
     main->addWidget(paths);
 
     auto* options = new QGroupBox(QStringLiteral("Профиль оптимизации"), root);
-    auto* optionsLayout = new QHBoxLayout(options);
+    auto* optionsLayout = new QVBoxLayout(options);
+    auto* optionsTop = new QHBoxLayout;
     m_profileCombo = new QComboBox(options);
     for (const auto& p : m_profiles)
         m_profileCombo->addItem(p.displayName, p.id);
@@ -163,12 +164,33 @@ void MainWindow::buildUi()
     m_backupCheck->setChecked(true);
     m_forceCheck = new QCheckBox(QStringLiteral("Перекодировать даже оптимальные"), options);
     m_dryRunCheck = new QCheckBox(QStringLiteral("Только анализ"), options);
-    optionsLayout->addWidget(m_profileCombo, 1);
-    optionsLayout->addWidget(m_compressionCombo);
-    optionsLayout->addWidget(m_recursiveCheck);
-    optionsLayout->addWidget(m_backupCheck);
-    optionsLayout->addWidget(m_forceCheck);
-    optionsLayout->addWidget(m_dryRunCheck);
+    m_shortSideCombo = new QComboBox(options);
+    m_shortSideCombo->addItem(QStringLiteral("Меньшая сторона: не менять"), 0);
+    m_shortSideCombo->addItem(QStringLiteral("Меньшая сторона: 256"), 256);
+    m_shortSideCombo->addItem(QStringLiteral("Меньшая сторона: 512"), 512);
+    m_shortSideCombo->addItem(QStringLiteral("Меньшая сторона: 1024"), 1024);
+    m_shortSideCombo->addItem(QStringLiteral("Меньшая сторона: 2048"), 2048);
+    m_shortSideCombo->setToolTip(QStringLiteral("Уменьшает только текстуры, у которых меньшая сторона больше выбранного значения. Пропорции сохраняются, увеличения разрешения нет."));
+
+    optionsTop->addWidget(m_profileCombo, 1);
+    optionsTop->addWidget(m_compressionCombo);
+    optionsTop->addWidget(m_shortSideCombo);
+    optionsTop->addWidget(m_recursiveCheck);
+    optionsTop->addWidget(m_backupCheck);
+    optionsTop->addWidget(m_forceCheck);
+    optionsTop->addWidget(m_dryRunCheck);
+    optionsLayout->addLayout(optionsTop);
+
+    auto* exclusions = new QHBoxLayout;
+    m_excludeSmallCheck = new QCheckBox(QStringLiteral("Не трогать маленькие (≤256 по меньшей стороне)"), options);
+    m_excludeSmallCheck->setChecked(true);
+    m_excludeNamesEdit = new QLineEdit(options);
+    m_excludeNamesEdit->setPlaceholderText(QStringLiteral("menu, tx_scroll, icons, gui, hud, cursor, font"));
+    m_excludeNamesEdit->setToolTip(QStringLiteral("Подстроки через запятую. Если путь или имя DDS содержит одну из них, файл полностью исключается из обработки."));
+    exclusions->addWidget(m_excludeSmallCheck);
+    exclusions->addWidget(new QLabel(QStringLiteral("Исключать по имени:"), options));
+    exclusions->addWidget(m_excludeNamesEdit, 1);
+    optionsLayout->addLayout(exclusions);
     main->addWidget(options);
 
     auto* actions = new QHBoxLayout;
@@ -215,6 +237,9 @@ void MainWindow::buildUi()
     connect(m_cancelButton, &QPushButton::clicked, this, &MainWindow::cancelOptimization);
     connect(m_profileCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::profileChanged);
     connect(m_compressionCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]{ refreshPlans(); });
+    connect(m_shortSideCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]{ refreshPlans(); });
+    connect(m_excludeSmallCheck, &QCheckBox::toggled, this, [this]{ refreshPlans(); });
+    connect(m_excludeNamesEdit, &QLineEdit::textChanged, this, [this]{ refreshPlans(); });
     connect(m_forceCheck, &QCheckBox::toggled, this, [this]{ refreshPlans(); });
 }
 
@@ -239,6 +264,12 @@ void MainWindow::loadSettings()
     m_recursiveCheck->setChecked(s.value(QStringLiteral("recursive"), true).toBool());
     m_backupCheck->setChecked(s.value(QStringLiteral("backup"), true).toBool());
     m_forceCheck->setChecked(s.value(QStringLiteral("force"), false).toBool());
+    m_excludeSmallCheck->setChecked(s.value(QStringLiteral("excludeSmall"), true).toBool());
+    m_excludeNamesEdit->setText(s.value(QStringLiteral("excludeNames"), QStringLiteral("menu,tx_scroll,icons,gui,hud,cursor,font")).toString());
+    const int savedShortSide = s.value(QStringLiteral("shortSideTarget"), 0).toInt();
+    const int shortSideIndex = m_shortSideCombo->findData(savedShortSide);
+    if (shortSideIndex >= 0)
+        m_shortSideCombo->setCurrentIndex(shortSideIndex);
     const int savedCompression = s.value(QStringLiteral("compressionLevel"), 0).toInt();
     const int compressionIndex = m_compressionCombo->findData(savedCompression);
     if (compressionIndex >= 0)
@@ -268,6 +299,9 @@ void MainWindow::saveSettings()
     s.setValue(QStringLiteral("recursive"), m_recursiveCheck->isChecked());
     s.setValue(QStringLiteral("backup"), m_backupCheck->isChecked());
     s.setValue(QStringLiteral("force"), m_forceCheck->isChecked());
+    s.setValue(QStringLiteral("excludeSmall"), m_excludeSmallCheck->isChecked());
+    s.setValue(QStringLiteral("excludeNames"), m_excludeNamesEdit->text());
+    s.setValue(QStringLiteral("shortSideTarget"), shortSideTarget());
     s.setValue(QStringLiteral("compressionLevel"), compressionLevel());
     s.setValue(QStringLiteral("profile"), m_profileCombo->currentData());
 }
@@ -314,6 +348,25 @@ OptimizerProfile MainWindow::currentProfile() const
 int MainWindow::compressionLevel() const
 {
     return m_compressionCombo ? m_compressionCombo->currentData().toInt() : 0;
+}
+
+int MainWindow::shortSideTarget() const
+{
+    return m_shortSideCombo ? m_shortSideCombo->currentData().toInt() : 0;
+}
+
+QStringList MainWindow::excludedNamePatterns() const
+{
+    if (!m_excludeNamesEdit)
+        return {};
+    QStringList out;
+    for (const QString& token : m_excludeNamesEdit->text().split(',', Qt::SkipEmptyParts))
+    {
+        const QString t = token.trimmed();
+        if (!t.isEmpty())
+            out << t;
+    }
+    return out;
 }
 
 int MainWindow::rowForJob(int jobIndex) const
@@ -366,7 +419,7 @@ void MainWindow::scanTextures()
         job.inputPath = path;
         job.relativePath = rel;
         job.info = readDdsInfo(path);
-        job.plan = buildPlan(path, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel());
+        job.plan = buildPlan(path, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel(), shortSideTarget(), m_excludeSmallCheck->isChecked(), excludedNamePatterns());
         m_jobs.push_back(job);
     }
 
@@ -410,7 +463,7 @@ void MainWindow::refreshPlans()
     for (int jobIndex = 0; jobIndex < m_jobs.size(); ++jobIndex)
     {
         auto& job = m_jobs[jobIndex];
-        job.plan = buildPlan(job.inputPath, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel());
+        job.plan = buildPlan(job.inputPath, job.info, currentProfile(), m_forceCheck->isChecked(), compressionLevel(), shortSideTarget(), m_excludeSmallCheck->isChecked(), excludedNamePatterns());
         const int r = rowForJob(jobIndex);
         if (r < 0)
             continue;

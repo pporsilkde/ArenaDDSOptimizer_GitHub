@@ -3,6 +3,7 @@
 #include "ddsinfo.h"
 
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 struct OptimizerProfile
@@ -29,4 +30,6 @@ struct OptimizationPlan
 
 QVector<OptimizerProfile> builtInProfiles();
 OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile,
-                           bool forceReencode, int compressionLevel = 0);
+                           bool forceReencode, int compressionLevel = 0,
+                           int shortSideTarget = 0, bool excludeSmallTextures = true,
+                           const QStringList& excludedNamePatterns = {});

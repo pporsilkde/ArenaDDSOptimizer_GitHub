@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
-project(ArenaDDSOptimizer VERSION 0.1.3 LANGUAGES CXX)
+project(ArenaDDSOptimizer VERSION 0.1.4 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "Arena DDS Optimizer 0.1.3 is packaged and supported as a Windows-only desktop application.")
+    message(FATAL_ERROR "Arena DDS Optimizer 0.1.4 is packaged and supported as a Windows-only desktop application.")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)

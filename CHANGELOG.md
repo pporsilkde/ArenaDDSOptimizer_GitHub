@@ -1,3 +1,11 @@
+# 0.1.4
+
+- Adds optional resizing by the **shorter texture side** to 256 / 512 / 1024 / 2048 while preserving aspect ratio and never upscaling.
+- Adds automatic protection for small textures: by default DDS with a shorter side of 256 px or less are skipped.
+- Adds configurable filename/path exclusions. Defaults include `menu`, `tx_scroll`, `icons`, `gui`, `hud`, `cursor`, and `font`.
+- Excluded textures are fully skipped, including forced re-encode, to avoid damaging UI assets.
+- The profile maximum dimension remains a hard upper bound in addition to the new shorter-side target.
+
 # 0.1.3
 
 - Adds user-selectable additional DDS size reduction: Normal / Strong / Maximum.

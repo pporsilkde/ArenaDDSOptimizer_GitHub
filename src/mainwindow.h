@@ -5,6 +5,7 @@
 
 #include <QMainWindow>
 #include <QProcess>
+#include <QStringList>
 #include <QVector>
 
 class QCheckBox;
@@ -53,6 +54,8 @@ private:
     QString humanSize(quint64 bytes) const;
     OptimizerProfile currentProfile() const;
     int compressionLevel() const;
+    int shortSideTarget() const;
+    QStringList excludedNamePatterns() const;
     int rowForJob(int jobIndex) const;
     void setBusy(bool busy);
     void updateSummary();
@@ -63,9 +66,12 @@ private:
     QLineEdit* m_toolEdit = nullptr;
     QComboBox* m_profileCombo = nullptr;
     QComboBox* m_compressionCombo = nullptr;
+    QComboBox* m_shortSideCombo = nullptr;
     QCheckBox* m_recursiveCheck = nullptr;
     QCheckBox* m_backupCheck = nullptr;
     QCheckBox* m_forceCheck = nullptr;
+    QCheckBox* m_excludeSmallCheck = nullptr;
+    QLineEdit* m_excludeNamesEdit = nullptr;
     QCheckBox* m_dryRunCheck = nullptr;
     QPushButton* m_scanButton = nullptr;
     QPushButton* m_optimizeButton = nullptr;

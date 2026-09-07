@@ -82,7 +82,7 @@ with the complete portable application.
 ## GitHub Actions
 
 - **Build Windows**: runs on pushes and pull requests and uploads `ArenaDDSOptimizer-Windows-x64.zip`.
-- **Release Windows**: a tag such as `v0.1.3` builds the Windows package and creates a GitHub Release.
+- **Release Windows**: a tag such as `v0.1.4` builds the Windows package and creates a GitHub Release.
 - **CodeQL Windows**: C/C++ analysis on Windows.
 
 ## ArenaMP / ArenaMW workflow
@@ -109,3 +109,7 @@ Arena DDS Optimizer source code: GPL-3.0. See `LICENSE`.
 ### About additional compression
 
 BC1/BC3 are fixed-rate block formats, so a smaller DDS cannot be produced merely by increasing a generic compression level. **Strong** and **Maximum** only lower the resolution cap for oversized textures, preserve a full mip chain, and enable DirectXTex dithering for BC1/BC3. The application shows a warning before applying these lossy size-reduction modes.
+
+## v0.1.4 texture protection and resize controls
+
+The GUI can resize by the shorter side to 256/512/1024/2048 without upscaling, skip small textures (shorter side <=256), and fully exclude configurable filename/path patterns such as `menu` and `tx_scroll`.
