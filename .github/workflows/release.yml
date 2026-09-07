@@ -48,7 +48,7 @@ jobs:
           & package/windows/texconv.exe --version
       - name: Create release ZIP
         shell: pwsh
-        run: Compress-Archive -Path package/windows/* -DestinationPath ArenaDDSOptimizer-${{ github.ref_name }}-Windows-x64.zip -Force
+        run: 7z a -tzip -mx=9 ArenaDDSOptimizer-${{ github.ref_name }}-Windows-x64.zip ./package/windows/*
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
-project(ArenaDDSOptimizer VERSION 0.1.3 LANGUAGES CXX)
+project(ArenaDDSOptimizer VERSION 0.1.5 LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "Arena DDS Optimizer 0.1.3 is packaged and supported as a Windows-only desktop application.")
+    message(FATAL_ERROR "Arena DDS Optimizer 0.1.5 is packaged and supported as a Windows-only desktop application.")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -22,6 +22,7 @@ add_executable(ArenaDDSOptimizer
     src/ddsinfo.h
     src/optimizerprofile.cpp
     src/optimizerprofile.h
+    resources/ArenaDDSOptimizer.rc
 )
 
 target_link_libraries(ArenaDDSOptimizer PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)

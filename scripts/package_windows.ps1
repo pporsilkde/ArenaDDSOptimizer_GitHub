@@ -27,7 +27,13 @@ if (-not (Test-Path $dxLicense)) { throw "DirectXTex LICENSE not found: $dxLicen
 Copy-Item $dxLicense (Join-Path $out "DirectXTex-LICENSE.txt")
 
 $deploy = Get-Command windeployqt.exe -ErrorAction Stop
-& $deploy.Source --release --no-translations --compiler-runtime (Join-Path $out "ArenaDDSOptimizer.exe")
+& $deploy.Source --release --no-translations --compiler-runtime --no-opengl-sw (Join-Path $out "ArenaDDSOptimizer.exe")
+
+# Keep only the Qt runtime plugins required by a Widgets desktop application.
+$allowedPluginDirs = @("platforms", "styles")
+Get-ChildItem -Path $out -Directory | Where-Object {
+    $_.Name -notin $allowedPluginDirs -and $_.Name -ne "presets"
+} | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 Copy-Item (Join-Path $root "presets") $out -Recurse
 Copy-Item (Join-Path $root "README.md") $out

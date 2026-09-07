@@ -1,5 +1,6 @@
 #include "optimizerprofile.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QtMath>
 
@@ -46,7 +47,8 @@ QVector<OptimizerProfile> builtInProfiles()
 }
 
 OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const OptimizerProfile& profile,
-                           bool forceReencode, int compressionLevel)
+                           bool forceReencode, int compressionLevel, int shortSideTarget,
+                           bool excludeSmallTextures, const QStringList& excludedNamePatterns)
 {
     OptimizationPlan plan;
     if (!info.valid)
@@ -57,6 +59,27 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
 
     plan.targetWidth = info.width;
     plan.targetHeight = info.height;
+
+    const QString lowerPath = QDir::fromNativeSeparators(path).toLower();
+    bool protectResolution = false;
+    QString resolutionProtectionReason;
+    for (const QString& rawPattern : excludedNamePatterns)
+    {
+        const QString pattern = rawPattern.trimmed().toLower();
+        if (!pattern.isEmpty() && lowerPath.contains(pattern))
+        {
+            protectResolution = true;
+            resolutionProtectionReason = QStringLiteral("размер защищён по имени: %1").arg(pattern);
+            break;
+        }
+    }
+
+    const int originalShortSide = qMin(info.width, info.height);
+    if (!protectResolution && excludeSmallTextures && originalShortSide <= 256)
+    {
+        protectResolution = true;
+        resolutionProtectionReason = QStringLiteral("размер защищён: меньшая сторона ≤ 256");
+    }
 
     // BC1/BC3 have a fixed bytes-per-block ratio: there is no "stronger zlib-like"
     // setting that makes the same DXT image smaller. Extra compression therefore
@@ -69,12 +92,30 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
     else if (compressionLevel == 2)
         effectiveMaxDimension = qMax(1024, profile.maxDimension / 4);
 
-    const int largest = qMax(info.width, info.height);
-    if (largest > effectiveMaxDimension)
+    // Resize modes are intentionally exclusive:
+    // - when a shorter-side target is selected, ONLY that target may change resolution;
+    // - when it is disabled, the profile/extra-compression maximum dimension may resize.
+    // Protected UI/small textures may still be re-encoded, but their resolution is never changed.
+    if (!protectResolution && shortSideTarget > 0)
     {
-        const double scale = double(effectiveMaxDimension) / double(largest);
-        plan.targetWidth = roundedBlockDimension(qRound(info.width * scale));
-        plan.targetHeight = roundedBlockDimension(qRound(info.height * scale));
+        shortSideTarget = qBound(256, shortSideTarget, 2048);
+        const int currentShort = qMin(info.width, info.height);
+        if (currentShort > shortSideTarget)
+        {
+            const double scale = double(shortSideTarget) / double(currentShort);
+            plan.targetWidth = roundedBlockDimension(qRound(info.width * scale));
+            plan.targetHeight = roundedBlockDimension(qRound(info.height * scale));
+        }
+    }
+    else if (!protectResolution)
+    {
+        const int largest = qMax(info.width, info.height);
+        if (largest > effectiveMaxDimension)
+        {
+            const double scale = double(effectiveMaxDimension) / double(largest);
+            plan.targetWidth = roundedBlockDimension(qRound(info.width * scale));
+            plan.targetHeight = roundedBlockDimension(qRound(info.height * scale));
+        }
     }
 
     const bool normal = looksLikeNormalMap(path);
@@ -115,6 +156,9 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
     if (resize)
     {
         why << QStringLiteral("%1x%2 → %3x%4").arg(info.width).arg(info.height).arg(plan.targetWidth).arg(plan.targetHeight);
+        if (shortSideTarget > 0 && qMin(plan.targetWidth, plan.targetHeight) <= shortSideTarget &&
+            qMin(info.width, info.height) > shortSideTarget)
+            why << QStringLiteral("меньшая сторона → %1").arg(shortSideTarget);
         if (compressionLevel == 1)
             why << QStringLiteral("сильная доп. компрессия");
         else if (compressionLevel == 2)
@@ -126,6 +170,8 @@ OptimizationPlan buildPlan(const QString& path, const DdsInfo& info, const Optim
         why << QStringLiteral("→ %1").arg(plan.outputFormat);
     if (normal)
         why << QStringLiteral("normal-map: совместимый BC3/DXT5");
+    if (protectResolution)
+        why << resolutionProtectionReason;
     plan.reason = why.isEmpty() ? QStringLiteral("переупаковка") : why.join(QStringLiteral(", "));
     return plan;
 }

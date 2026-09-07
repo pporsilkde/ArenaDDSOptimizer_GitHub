@@ -8,7 +8,7 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("ArenaMP"));
     QCoreApplication::setApplicationName(QStringLiteral("ArenaDDSOptimizer"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.3"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.4"));
 
     MainWindow w;
     w.show();

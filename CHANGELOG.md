@@ -1,3 +1,20 @@
+## 0.1.5
+
+- Shorter-side resizing is now an exclusive resolution mode: when 256/512/1024/2048 is selected, no profile/long-side resize is applied.
+- Files whose shorter side is already at or below the selected target are never resized or upscaled.
+- Small textures and configurable name patterns (`menu`, `tx_scroll`, etc.) now protect resolution only; other optimization steps may still run.
+- CodeQL no longer launches a second Windows build on every push; it runs weekly or manually.
+- Windows EXE now embeds the Arena DDS Optimizer icon.
+- Portable packaging keeps the MSVC runtime for portability, omits the large unused Qt software-OpenGL fallback, prunes unused Qt plugin directories, and GitHub Actions uses maximum ZIP compression.
+
+# 0.1.4
+
+- Adds optional resizing by the **shorter texture side** to 256 / 512 / 1024 / 2048 while preserving aspect ratio and never upscaling.
+- Adds automatic protection for small textures: by default DDS with a shorter side of 256 px or less are skipped.
+- Adds configurable filename/path exclusions. Defaults include `menu`, `tx_scroll`, `icons`, `gui`, `hud`, `cursor`, and `font`.
+- Excluded textures are fully skipped, including forced re-encode, to avoid damaging UI assets.
+- The profile maximum dimension remains a hard upper bound in addition to the new shorter-side target.
+
 # 0.1.3
 
 - Adds user-selectable additional DDS size reduction: Normal / Strong / Maximum.

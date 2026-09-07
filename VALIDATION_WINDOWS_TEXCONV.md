@@ -1,6 +1,6 @@
 # Windows / bundled Texconv validation
 
-Version: 0.1.3
+Version: 0.1.4
 
 Static checks performed for this source package:
 

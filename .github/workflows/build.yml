@@ -52,7 +52,7 @@ jobs:
           & package/windows/texconv.exe --version
       - name: Create ZIP
         shell: pwsh
-        run: Compress-Archive -Path package/windows/* -DestinationPath ArenaDDSOptimizer-Windows-x64.zip -Force
+        run: 7z a -tzip -mx=9 ArenaDDSOptimizer-Windows-x64.zip ./package/windows/*
       - uses: actions/upload-artifact@v4
         with:
           name: ArenaDDSOptimizer-Windows-x64
